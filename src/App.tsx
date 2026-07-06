@@ -20,9 +20,9 @@ import AdminKeysDesk from "./components/AdminKeysDesk";
 import { WeatherData, SavedLocation, UserRole, UnitType } from "./types";
 
 export default function App() {
-  const [lat, setLat] = useState(40.7128);
-  const [lon, setLon] = useState(-74.0060);
-  const [cityName, setCityName] = useState("New York Unified Grid");
+  const [lat, setLat] = useState(20.4625);
+  const [lon, setLon] = useState(85.8792);
+  const [cityName, setCityName] = useState("Cuttack, India");
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [savedLocations, setSavedLocations] = useState<SavedLocation[]>([]);
   const [currentRole, setCurrentRole] = useState<UserRole>("Observer");
@@ -157,8 +157,8 @@ export default function App() {
             setCurrentRole(user.role || "Observer");
             if (user.preferences) {
               setCurrentUnit(user.preferences.unit || "metric");
-              setLat(user.preferences.defaultLat || 40.7128);
-              setLon(user.preferences.defaultLon || -74.0060);
+              setLat(user.preferences.defaultLat || 20.4625);
+              setLon(user.preferences.defaultLon || 85.8792);
             }
           } else {
             // Token expired/invalid

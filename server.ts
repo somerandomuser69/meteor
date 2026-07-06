@@ -107,11 +107,11 @@ function initializeDatabase(): DBStructure {
         unit: "metric",
         theme: "dark",
         preferredProvider: "consensus",
-        defaultLat: 40.7128,
-        defaultLon: -74.0060
+        defaultLat: 20.4625,
+        defaultLon: 85.8792
       },
       favorites: [
-        { id: "1", name: "New York, USA", lat: 40.7128, lon: -74.0060, notes: "Aviation Hub Forecast", roleRequired: "Observer" },
+        { id: "1", name: "Cuttack, India", lat: 20.4625, lon: 85.8792, notes: "Primary Observatory station", roleRequired: "Observer" },
         { id: "2", name: "Geneva, Switzerland (ECMWF Grid)", lat: 46.2044, lon: 6.1432, notes: "High Altitude Hydrological Grid", roleRequired: "Forecaster" },
         { id: "3", name: "New Delhi, India", lat: 28.6139, lon: 77.2090, notes: "Monsoon Tracking Grid", roleRequired: "Meteorologist" },
         { id: "4", name: "Tokyo, Japan", lat: 35.6762, lon: 139.6503, notes: "Pacific Marine Radar Grid", roleRequired: "Observer" }
@@ -152,8 +152,8 @@ function initializeDatabase(): DBStructure {
         unit: "metric",
         theme: "dark",
         preferredProvider: "consensus",
-        defaultLat: 40.7128,
-        defaultLon: -74.0060
+        defaultLat: 20.4625,
+        defaultLon: 85.8792
       },
       favorites: []
     };
@@ -212,8 +212,8 @@ function getAuthenticatedUser(req: express.Request): UserAccount | null {
 // WEATHER TELEMETRY MULTI-API PROCESSING
 // ----------------------------------------------------
 app.get("/api/weather", async (req, res) => {
-  const lat = parseFloat(req.query.lat as string) || 40.7128;
-  const lon = parseFloat(req.query.lon as string) || -74.0060;
+  const lat = parseFloat(req.query.lat as string) || 20.4625;
+  const lon = parseFloat(req.query.lon as string) || 85.8792;
 
   try {
     // 1. Core Fetch: Open-Meteo (always active, needs no key)
@@ -423,11 +423,11 @@ app.post("/api/auth/register", (req, res) => {
       unit: "metric",
       theme: "dark",
       preferredProvider: "consensus",
-      defaultLat: 40.7128,
-      defaultLon: -74.0060
+      defaultLat: 20.4625,
+      defaultLon: 85.8792
     },
     favorites: [
-      { id: "1", name: "New York, USA", lat: 40.7128, lon: -74.0060, notes: "Aviation Hub Forecast", roleRequired: "Observer" }
+      { id: "1", name: "Cuttack, India", lat: 20.4625, lon: 85.8792, notes: "Primary Observatory station", roleRequired: "Observer" }
     ]
   };
 

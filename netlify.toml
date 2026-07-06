@@ -2,8 +2,16 @@
   command = "npm run build"
   publish = "dist"
 
+# Proxy API requests to the live Cloud Run backend hosted in AI Studio
+[[redirects]]
+  from = "/api/*"
+  to = "https://ais-pre-daargtde7dsfpfdsx5gcvq-694311073366.asia-southeast1.run.app/api/:splat"
+  status = 200
+  force = true
+
 # Redirect all routing to the React index.html for Single Page Application support
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
+

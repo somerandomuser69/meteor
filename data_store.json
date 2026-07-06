@@ -10,10 +10,18 @@
         "unit": "metric",
         "theme": "dark",
         "preferredProvider": "consensus",
-        "defaultLat": 40.7128,
-        "defaultLon": -74.006
+        "defaultLat": 20.4625,
+        "defaultLon": 85.8792
       },
       "favorites": [
+        {
+          "id": "1",
+          "name": "Cuttack, India",
+          "lat": 20.4625,
+          "lon": 85.8792,
+          "notes": "Primary Observatory station",
+          "roleRequired": "Observer"
+        },
         {
           "id": "2",
           "name": "Geneva, Switzerland (ECMWF Grid)",
@@ -50,8 +58,8 @@
         "unit": "metric",
         "theme": "dark",
         "preferredProvider": "consensus",
-        "defaultLat": 40.7128,
-        "defaultLon": -74.006
+        "defaultLat": 20.4625,
+        "defaultLon": 85.8792
       },
       "favorites": []
     }
