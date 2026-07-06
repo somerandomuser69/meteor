@@ -30,6 +30,11 @@ export default function AuthorizationGateway({ onSuccess }: AuthorizationGateway
         body: JSON.stringify({ key: keyCode.trim() })
       });
 
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        throw new Error(`Server returned a non-JSON response (Status ${res.status}). This usually indicates a gateway routing issue or network downtime. Please try again later.`);
+      }
+
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error || "Invalid Access Key. Please check the code and try again.");
@@ -66,6 +71,11 @@ export default function AuthorizationGateway({ onSuccess }: AuthorizationGateway
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim(), password: password.trim() })
       });
+
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        throw new Error(`Server returned a non-JSON response (Status ${res.status}). This usually indicates a gateway routing issue or network downtime. Please try again later.`);
+      }
 
       const data = await res.json();
       if (!res.ok) {
@@ -217,7 +227,7 @@ export default function AuthorizationGateway({ onSuccess }: AuthorizationGateway
                 <input
                   type="email"
                   required
-                  placeholder="meet.arnesh@gmail.com"
+                  placeholder="staff@observatory.org"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full bg-slate-950 border border-slate-900 focus:border-purple-500/50 rounded-xl pl-10 pr-4 py-3 text-white placeholder-slate-600 focus:outline-none transition-all"
