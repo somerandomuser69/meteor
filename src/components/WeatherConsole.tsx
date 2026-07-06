@@ -354,26 +354,156 @@ export default function WeatherConsole({ weatherData, unit, cityName, lat = 20.4
         maxZoom: 18,
       }).addTo(map);
 
-      // Draw a 30km diameter boundary zone circle (15km radius)
+      // 1. Draw a 30km diameter boundary zone circle (15km radius)
       L.circle([lat, lon], {
         color: "#06b6d4",
         fillColor: "#06b6d4",
-        fillOpacity: 0.08,
+        fillOpacity: 0.05,
         radius: 15000, 
         weight: 1.5,
         dashArray: "4 6"
       }).addTo(map);
 
-      // Pulsating internal core circle (5km)
+      // 2. Pulsating internal core circle (5km)
       L.circle([lat, lon], {
         color: "#8b5cf6",
         fillColor: "#8b5cf6",
-        fillOpacity: 0.12,
+        fillOpacity: 0.1,
         radius: 5000,
         weight: 1
       }).addTo(map);
 
-      // Station Marker
+      // 3. CLOUDS LAYER (Floating translucent cloud structures if coverage is present)
+      const cloudCover = current?.cloud_cover || 0;
+      if (cloudCover > 15) {
+        const numClouds = Math.min(5, Math.ceil(cloudCover / 20));
+        for (let i = 0; i < numClouds; i++) {
+          // Displace cloud nodes beautifully within the 30km radius
+          const angle = (i * (360 / numClouds) * Math.PI) / 180;
+          const dist = 0.04 + (Math.sin(i) * 0.02);
+          const cloudLat = lat + Math.sin(angle) * dist;
+          const cloudLon = lon + Math.cos(angle) * dist;
+          const cloudRadius = 2500 + (Math.sin(i * 1.5) * 1000);
+          
+          L.circle([cloudLat, cloudLon], {
+            color: "rgba(148, 163, 184, 0.45)",
+            fillColor: "#cbd5e1",
+            fillOpacity: 0.12 * (cloudCover / 100),
+            weight: 1,
+            dashArray: "3 3"
+          }).addTo(map);
+        }
+      }
+
+      // 4. WIND STREAMLINE LAYER (Dynamic directional vector arrows across grid)
+      const windSpeed = current?.wind_speed_10m || 0;
+      const windDir = current?.wind_direction_10m || 0;
+      if (windSpeed > 3) {
+        // Wind vectors blow TOWARDS: dir - 180
+        const angleRad = ((windDir - 180) * Math.PI) / 180;
+        
+        // Define clean offsets around the map coordinate center
+        const streamOffsets = [
+          [-0.05, -0.05],
+          [0.05, 0.05],
+          [-0.04, 0.04],
+          [0.04, -0.04],
+          [0.01, 0.01]
+        ];
+
+        streamOffsets.forEach(([oLat, oLon]) => {
+          const startLat = lat + oLat;
+          const startLon = lon + oLon;
+          
+          // Vector magnitude proportional to wind speed
+          const length = 0.015 + Math.min(0.018, windSpeed * 0.0003);
+          const endLat = startLat + Math.sin(angleRad) * length;
+          const endLon = startLon + Math.cos(angleRad) * length;
+
+          // Main streamline
+          L.polyline([[startLat, startLon], [endLat, endLon]], {
+            color: "#a855f7",
+            weight: 1.2,
+            opacity: 0.45,
+            dashArray: "4 4"
+          }).addTo(map);
+
+          // Streamline arrowhead
+          const arrowAngle1 = angleRad + (5 * Math.PI / 6);
+          const arrowAngle2 = angleRad - (5 * Math.PI / 6);
+          const headLength = length * 0.22;
+          
+          const arrow1Lat = endLat + Math.sin(arrowAngle1) * headLength;
+          const arrow1Lon = endLon + Math.cos(arrowAngle1) * headLength;
+          const arrow2Lat = endLat + Math.sin(arrowAngle2) * headLength;
+          const arrow2Lon = endLon + Math.cos(arrowAngle2) * headLength;
+
+          L.polyline([[endLat, endLon], [arrow1Lat, arrow1Lon]], {
+            color: "#a855f7",
+            weight: 1.2,
+            opacity: 0.45
+          }).addTo(map);
+          L.polyline([[endLat, endLon], [arrow2Lat, arrow2Lon]], {
+            color: "#a855f7",
+            weight: 1.2,
+            opacity: 0.45
+          }).addTo(map);
+        });
+      }
+
+      // 5. THUNDERSTORMS & SEVERE CONVECTIVE REFLECTIVITY CELLS
+      const isStormCode = [95, 96, 99].includes(current?.weather_code || 0);
+      const isRainCode = [51, 53, 55, 61, 63, 65, 80, 81, 82].includes(current?.weather_code || 0);
+
+      if (isStormCode) {
+        // Convective core centers
+        const cellOffsets = [
+          [0.01, -0.015],
+          [-0.02, 0.01],
+          [0, 0]
+        ];
+        cellOffsets.forEach(([oLat, oLon]) => {
+          const sLat = lat + oLat;
+          const sLon = lon + oLon;
+          
+          L.circle([sLat, sLon], {
+            color: "#ef4444",
+            fillColor: "#9333ea",
+            fillOpacity: 0.22,
+            radius: 3500,
+            weight: 1,
+            dashArray: "2 4"
+          }).addTo(map);
+
+          // Station storm warning marker pin
+          const boltIcon = L.divIcon({
+            className: "custom-storm-marker",
+            html: `<div class="text-yellow-400 animate-bounce">
+                     <svg class="h-4.5 w-4.5 drop-shadow-[0_0_6px_rgba(234,179,8,0.9)]" viewBox="0 0 24 24" fill="currentColor">
+                       <path d="M13 10V3L4 14h7v7l9-11h-7z" />
+                     </svg>
+                   </div>`
+          });
+          L.marker([sLat, sLon], { icon: boltIcon }).addTo(map);
+        });
+      } else if (isRainCode) {
+        // Rain cell reflectivity circles
+        const rainOffsets = [
+          [0.02, 0.02],
+          [-0.03, -0.015]
+        ];
+        rainOffsets.forEach(([oLat, oLon]) => {
+          L.circle([lat + oLat, lon + oLon], {
+            color: "#3b82f6",
+            fillColor: "#60a5fa",
+            fillOpacity: 0.15,
+            radius: 4000,
+            weight: 1
+          }).addTo(map);
+        });
+      }
+
+      // 6. Station/Operational coordinate marker
       const icon = L.divIcon({
         className: "custom-radar-pin",
         html: `<div class="relative flex items-center justify-center">
@@ -394,7 +524,7 @@ export default function WeatherConsole({ weatherData, unit, cityName, lat = 20.4
         miniMapRef.current = null;
       }
     };
-  }, [lat, lon]);
+  }, [lat, lon, current]);
 
   // Chart explanation manual content map
   const chartHelpDocs: Record<string, { title: string; desc: string; parameters: string[]; modelTip: string }> = {
@@ -453,8 +583,8 @@ export default function WeatherConsole({ weatherData, unit, cityName, lat = 20.4
       {/* -------------------- 1. METEOR INTEL INTELLIGENT PREDICTOR & CONTROL HUB -------------------- */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 relative z-[60]" id="meteor-intel-control-hub">
         
-        {/* WIDGET A: LIVE TICKING CLOCK & CONSOLE MONITOR (3 cols) */}
-        <div className="lg:col-span-3 bg-gradient-to-br from-slate-950 via-slate-950/95 to-slate-900 border border-slate-900/90 rounded-2xl p-5 flex flex-col justify-between shadow-xl min-h-[220px] relative overflow-hidden group">
+        {/* WIDGET A: LIVE TICKING CLOCK & CONSOLE MONITOR (2 cols) */}
+        <div className="lg:col-span-2 bg-gradient-to-br from-slate-950 via-slate-950/95 to-slate-900 border border-slate-900/90 rounded-2xl p-5 flex flex-col justify-between shadow-xl min-h-[220px] relative overflow-hidden group">
           {/* Subtle live radar overlay scanning line */}
           <div className="absolute inset-0 bg-cyan-500/[0.015] pointer-events-none" />
           <div className="absolute top-0 left-0 w-full h-[1.5px] bg-cyan-400/35 animate-[bounce_6s_infinite] pointer-events-none opacity-40" />
@@ -493,8 +623,8 @@ export default function WeatherConsole({ weatherData, unit, cityName, lat = 20.4
           </div>
         </div>
 
-        {/* WIDGET B: DYNAMIC ATMOSPHERIC PREDICTOR PANEL (4 cols) */}
-        <div className="lg:col-span-4 bg-slate-950/80 border border-slate-900 rounded-2xl p-5 flex flex-col justify-between shadow-xl relative z-10">
+        {/* WIDGET B: DYNAMIC ATMOSPHERIC PREDICTOR PANEL (3 cols) */}
+        <div className="lg:col-span-3 bg-slate-950/80 border border-slate-900 rounded-2xl p-5 flex flex-col justify-between shadow-xl relative z-10">
           <div className="flex items-center justify-between text-[10px] text-cyan-400 uppercase font-mono font-bold tracking-widest">
             <span className="flex items-center gap-1.5">
               <Sparkles className="h-3.5 w-3.5 text-cyan-400 animate-pulse" />
@@ -601,8 +731,8 @@ export default function WeatherConsole({ weatherData, unit, cityName, lat = 20.4
           </div>
         </div>
 
-        {/* WIDGET D: SOUND-ENABLED CRISIS TERMINAL & NOTIFICATION CENTER (2 cols) */}
-        <div className="lg:col-span-2 bg-slate-950/80 border border-slate-900 rounded-2xl p-4 flex flex-col justify-between shadow-xl min-h-[220px]">
+        {/* WIDGET D: SOUND-ENABLED CRISIS TERMINAL & NOTIFICATION CENTER (4 cols) */}
+        <div className="lg:col-span-4 bg-slate-950/80 border border-slate-900 rounded-2xl p-4 flex flex-col justify-between shadow-xl min-h-[220px]">
           <div className="flex items-center justify-between text-[10px] text-cyan-400 uppercase font-mono font-bold tracking-widest">
             <span className="flex items-center gap-1">
               <Bell className="h-3.5 w-3.5 text-cyan-400 animate-[swing_1.5s_ease_infinite]" />

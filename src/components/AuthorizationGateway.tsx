@@ -208,9 +208,9 @@ export default function AuthorizationGateway({ onSuccess }: AuthorizationGateway
                 className="w-full bg-slate-950 hover:bg-slate-900 border border-slate-900 text-slate-300 font-bold py-3 px-4 rounded-xl transition-all text-[11px] uppercase tracking-wider flex items-center justify-center gap-2"
               >
                 <HelpCircle className="h-4 w-4 text-cyan-400" />
-                Guest Access (2 Min Free Preview)
+                Guest Access (5 Min Free Preview)
               </button>
-              <p className="text-[9px] text-slate-500 mt-2 italic">Free sandbox access will automatically lock after 2 minutes.</p>
+              <p className="text-[9px] text-slate-500 mt-2 italic">Free sandbox access will automatically lock after 5 minutes.</p>
             </div>
           </div>
         )}

@@ -31,8 +31,13 @@ export default function App() {
   const [isAuthorized, setIsAuthorized] = useState<boolean>(() => {
     const savedType = localStorage.getItem("met_auth_type");
     const savedExpiryStr = localStorage.getItem("met_auth_expiry");
+    const savedToken = localStorage.getItem("met_intel_token");
     if (!savedType) return false;
-    if (savedType === "admin" || savedType === "user") return true;
+    
+    // Admin or user roles MUST have an accompanying token
+    if (savedType === "admin" || savedType === "user") {
+      return !!savedToken;
+    }
     
     // Check key or guest expiry
     if (savedExpiryStr) {
@@ -203,9 +208,15 @@ export default function App() {
               setLon(user.preferences.defaultLon || 85.8792);
             }
           } else {
-            // Token expired/invalid
+            // Token expired/invalid - clear full session state
             setUserToken(null);
             localStorage.removeItem("met_intel_token");
+            localStorage.removeItem("met_auth_type");
+            localStorage.removeItem("met_auth_expiry");
+            setIsAuthorized(false);
+            setAuthType(null);
+            setAuthExpiry(null);
+            setCurrentRole("Observer");
           }
         })
         .catch(() => {});
