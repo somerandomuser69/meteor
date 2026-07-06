@@ -733,7 +733,7 @@ if (typeof window !== "undefined") {
   // Initialize Client-side Database right away to make sure it's seeded
   getClientDb();
 
-  window.fetch = async function (input: any, init?: any): Promise<Response> {
+  const customFetch = async function (this: any, input: any, init?: any): Promise<Response> {
     let urlStr = "";
     if (typeof input === "string") {
       urlStr = input;
@@ -777,4 +777,31 @@ if (typeof window !== "undefined") {
       return handleClientEmulator(urlStr, init);
     }
   };
+
+  try {
+    Object.defineProperty(window, "fetch", {
+      value: customFetch,
+      configurable: true,
+      writable: true,
+      enumerable: true
+    });
+  } catch (err) {
+    console.warn("[Client Interceptor] Object.defineProperty on window failed. Trying alternative prototype injection...", err);
+    try {
+      // Fallback: override on the window prototype directly or cast
+      const winProto = Object.getPrototypeOf(window);
+      if (winProto && "fetch" in winProto) {
+        Object.defineProperty(winProto, "fetch", {
+          value: customFetch,
+          configurable: true,
+          writable: true,
+          enumerable: true
+        });
+      } else {
+        (window as any).fetch = customFetch;
+      }
+    } catch (err2) {
+      console.error("[Client Interceptor] Failed to intercept fetch globally:", err2);
+    }
+  }
 }
