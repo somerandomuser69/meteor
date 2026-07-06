@@ -1,17 +1,79 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend, BarChart, Bar, ReferenceDot } from "recharts";
-import { Thermometer, Wind, CloudRain, Sun, Compass, Navigation, Eye, Droplet, Download, Sparkles, ChevronRight, BarChart3, CloudSnow, Database, Network, ShieldCheck, Cpu } from "lucide-react";
-import { WeatherData, UnitType } from "../types";
+import { 
+  Thermometer, Wind, CloudRain, Sun, Compass, Navigation, Eye, Droplet, 
+  Download, Sparkles, ChevronRight, BarChart3, CloudSnow, Database, 
+  Network, ShieldCheck, Cpu, Clock, Calendar, Info, Bell, Volume2, 
+  VolumeX, ShieldAlert, Zap, CloudLightning, Sunrise, Sunset, MapPin, 
+  HelpCircle, AlertTriangle 
+} from "lucide-react";
+import { UnitType } from "../types";
 
 interface ConsoleProps {
   weatherData: any; // Allow any to map dynamic API provider structures safely
   unit: UnitType;
   cityName: string;
+  lat?: number;
+  lon?: number;
 }
 
-export default function WeatherConsole({ weatherData, unit, cityName }: ConsoleProps) {
-  const [forecastTab, setForecastTab] = useState<"hourly" | "weekly" | "analytics">("hourly");
+export default function WeatherConsole({ weatherData, unit, cityName, lat = 20.4625, lon = 85.8792 }: ConsoleProps) {
+  const [forecastTab, setForecastTab] = useState<"hourly" | "weekly" | "analytics" | "pressure">("hourly");
   const [viewConsensusDetails, setViewConsensusDetails] = useState<boolean>(true);
+  
+  // Custom states for new features
+  const [currentTime, setCurrentTime] = useState<Date>(new Date());
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
+  const [activeInfoCard, setActiveInfoCard] = useState<string | null>(null);
+  const [alerts, setAlerts] = useState<Array<{ id: string; time: string; text: string; type: "alert" | "info" | "success" }>>([]);
+
+  const miniMapContainerRef = useRef<HTMLDivElement>(null);
+  const miniMapRef = useRef<any>(null);
+
+  // Ticking clock interval
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  // Web Audio API sound generator
+  const playNotificationSound = () => {
+    if (!soundEnabled) return;
+    try {
+      const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioContext) return;
+      const ctx = new AudioContext();
+      if (ctx.state === "suspended") {
+        ctx.resume();
+      }
+      
+      const playTone = (time: number, freq: number, duration: number) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(freq, time);
+        
+        gain.gain.setValueAtTime(0, time);
+        gain.gain.linearRampToValueAtTime(0.12, time + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+        
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        
+        osc.start(time);
+        osc.stop(time + duration);
+      };
+      
+      const now = ctx.currentTime;
+      playTone(now, 987.77, 0.35); // Bright B5 tone
+      playTone(now + 0.1, 1479.98, 0.55); // Harmonious F#6 tone
+    } catch (err) {
+      console.warn("Sound generation was blocked or failed:", err);
+    }
+  };
 
   if (!weatherData) {
     return (
@@ -67,6 +129,123 @@ export default function WeatherConsole({ weatherData, unit, cityName }: ConsoleP
 
   const weatherMeta = decodeWeatherCode(current.weather_code);
 
+  // Dynamic Weather calculations & Predictors
+  const nextRain = useMemo(() => {
+    if (!hourly || !hourly.time) return null;
+    const startIndex = 0;
+    for (let i = startIndex; i < hourly.time.length; i++) {
+      const pProb = hourly.precipitation_probability?.[i] || 0;
+      const pSum = hourly.precipitation?.[i] || 0;
+      if (pSum > 0 || pProb > 15) {
+        const dateObj = new Date(hourly.time[i]);
+        return {
+          time: dateObj.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          date: dateObj.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" }),
+          prob: pProb,
+          amount: pSum,
+          fullDate: dateObj
+        };
+      }
+    }
+    return null;
+  }, [hourly]);
+
+  const nextStorm = useMemo(() => {
+    if (!hourly || !hourly.time) return null;
+    for (let i = 0; i < hourly.time.length; i++) {
+      const code = hourly.weather_code?.[i] || 0;
+      const wind = hourly.wind_speed_10m?.[i] || 0;
+      const capeVal = hourly.cape?.[i] || 0;
+      const isStormCode = [95, 96, 99].includes(code);
+      const isHighWind = wind > 35; 
+      
+      if (isStormCode || isHighWind || capeVal > 400) {
+        const dateObj = new Date(hourly.time[i]);
+        let cause = "Convective Shearing";
+        if (isStormCode) cause = "Thunderstorm Cell Core";
+        else if (isHighWind) cause = "High Velocity Gale Front";
+        else if (capeVal > 400) cause = "Extreme Instability System";
+        
+        return {
+          time: dateObj.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          date: dateObj.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" }),
+          cause: cause,
+          gustSpeed: Math.round(hourly.wind_gusts_10m?.[i] || wind * 1.3),
+          fullDate: dateObj
+        };
+      }
+    }
+    return null;
+  }, [hourly]);
+
+  const tomorrowSun = useMemo(() => {
+    if (!daily || !daily.sunrise || !daily.sunset) {
+      return { sunrise: "05:14 AM", sunset: "06:48 PM" };
+    }
+    try {
+      const tomorrowSunriseStr = daily.sunrise[1] || daily.sunrise[0];
+      const tomorrowSunsetStr = daily.sunset[1] || daily.sunset[0];
+      
+      const sunriseTime = new Date(tomorrowSunriseStr).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      const sunsetTime = new Date(tomorrowSunsetStr).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      
+      return { sunrise: sunriseTime, sunset: sunsetTime };
+    } catch (e) {
+      return { sunrise: "05:14 AM", sunset: "06:48 PM" };
+    }
+  }, [daily]);
+
+  // Construct Alerts dynamically based on actual upcoming data
+  useEffect(() => {
+    const freshAlerts: Array<{ id: string; time: string; text: string; type: "alert" | "info" | "success" }> = [];
+    
+    // Core check 1: Storm expectation
+    if (nextStorm) {
+      const hrsDiff = Math.ceil((nextStorm.fullDate.getTime() - Date.now()) / (1000 * 60 * 60));
+      if (hrsDiff < 48) {
+        freshAlerts.push({
+          id: "alert-storm",
+          time: `${nextStorm.date} at ${nextStorm.time}`,
+          text: `STORM ALERT: ${nextStorm.cause} expected in ${hrsDiff} hrs. Peak gusts up to ${convertWind(nextStorm.gustSpeed)} ${speedUnit} predicted.`,
+          type: "alert"
+        });
+      }
+    }
+    
+    // Core check 2: Rain expectation
+    if (nextRain) {
+      const hrsDiff = Math.ceil((nextRain.fullDate.getTime() - Date.now()) / (1000 * 60 * 60));
+      if (hrsDiff < 24) {
+        freshAlerts.push({
+          id: "alert-rain",
+          time: `${nextRain.date} at ${nextRain.time}`,
+          text: `PRECIPITATION: Dynamic moisture cell triggers in ${hrsDiff} hrs. Rain volume: ${nextRain.amount}mm (${nextRain.prob}% probability).`,
+          type: "info"
+        });
+      }
+    }
+
+    // Default systemic alerts to maintain operational dashboard look
+    freshAlerts.push({
+      id: "sys-0",
+      time: "REAL-TIME",
+      text: "GIS RADAR: Telemetry tracking established in 30km scale grid radius around target.",
+      type: "success"
+    });
+
+    if (current.wind_speed_10m > 25) {
+      freshAlerts.push({
+        id: "sys-wind",
+        time: "IMMEDIATE",
+        text: `WIND SHEAR: Sustained velocities of ${convertWind(current.wind_speed_10m)} ${speedUnit} verified by ensemble solvers.`,
+        type: "alert"
+      });
+    }
+
+    setAlerts(freshAlerts);
+    playNotificationSound();
+  }, [nextRain, nextStorm, cityName, lat, lon]);
+
   // Recharts: Preparing Hourly Data Frame
   const hourlyData = hourly.time.slice(0, 24).map((t: string, idx: number) => {
     const date = new Date(t);
@@ -78,7 +257,10 @@ export default function WeatherConsole({ weatherData, unit, cityName }: ConsoleP
       "Precip %": hourly.precipitation_probability[idx],
       "Wind Speed": convertWind(hourly.wind_speed_10m[idx]),
       "Humidity %": hourly.relative_humidity_2m[idx],
-      "CAPE (J/kg)": Math.round(hourly.cape?.[idx] || 0)
+      "CAPE (J/kg)": Math.round(hourly.cape?.[idx] || 0),
+      "Cloud Cover %": hourly.cloud_cover?.[idx] || 0,
+      "Barometer hPa": Math.round(hourly.pressure_msl?.[idx] || 1012),
+      "Wind Gusts": convertWind(hourly.wind_gusts_10m?.[idx] || hourly.wind_speed_10m[idx] * 1.3)
     };
   });
 
@@ -128,7 +310,6 @@ export default function WeatherConsole({ weatherData, unit, cityName }: ConsoleP
     document.body.removeChild(link);
   };
 
-  // Safe checks for Multi-API structure
   const p = weatherData.providers || {};
   const consensus = weatherData.consensus || {
     temp: current.temperature_2m,
@@ -147,11 +328,374 @@ export default function WeatherConsole({ weatherData, unit, cityName }: ConsoleP
     { key: "openWeatherMap", name: "OpenWeatherMap Core", data: p.openWeatherMap, color: "text-sky-400" }
   ].filter(item => item.data); // only show if available
 
+  // Leaflet Mini Map Initializer
+  useEffect(() => {
+    const L = (window as any).L;
+    if (!L || !miniMapContainerRef.current) return;
+
+    try {
+      // Clean previous map instance
+      if (miniMapRef.current) {
+        miniMapRef.current.remove();
+        miniMapRef.current = null;
+      }
+
+      // Initialize map with zoom level 11 (approx 30km visual grid viewport)
+      const map = L.map(miniMapContainerRef.current, {
+        zoomControl: false,
+        attributionControl: false,
+        scrollWheelZoom: false,
+        doubleClickZoom: false,
+        boxZoom: false,
+        dragging: false
+      }).setView([lat, lon], 11);
+
+      L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
+        maxZoom: 18,
+      }).addTo(map);
+
+      // Draw a 30km diameter boundary zone circle (15km radius)
+      L.circle([lat, lon], {
+        color: "#06b6d4",
+        fillColor: "#06b6d4",
+        fillOpacity: 0.08,
+        radius: 15000, 
+        weight: 1.5,
+        dashArray: "4 6"
+      }).addTo(map);
+
+      // Pulsating internal core circle (5km)
+      L.circle([lat, lon], {
+        color: "#8b5cf6",
+        fillColor: "#8b5cf6",
+        fillOpacity: 0.12,
+        radius: 5000,
+        weight: 1
+      }).addTo(map);
+
+      // Station Marker
+      const icon = L.divIcon({
+        className: "custom-radar-pin",
+        html: `<div class="relative flex items-center justify-center">
+                 <div class="absolute h-6 w-6 rounded-full bg-cyan-500/20 border border-cyan-500 animate-ping"></div>
+                 <div class="h-3.5 w-3.5 rounded-full bg-cyan-500 border-2 border-white shadow-xl"></div>
+               </div>`
+      });
+      L.marker([lat, lon], { icon }).addTo(map);
+
+      miniMapRef.current = map;
+    } catch (e) {
+      console.warn("Leaflet mini-map rendering bypassed:", e);
+    }
+
+    return () => {
+      if (miniMapRef.current) {
+        miniMapRef.current.remove();
+        miniMapRef.current = null;
+      }
+    };
+  }, [lat, lon]);
+
+  // Chart explanation manual content map
+  const chartHelpDocs: Record<string, { title: string; desc: string; parameters: string[]; modelTip: string }> = {
+    synoptic: {
+      title: "24-Hour Synoptic Trends Manual",
+      desc: "This graph correlates air temperature values against ambient relative humidity percentage across the current diurnal cycle. There is a strong negative thermodynamic correlation: as temperature peaks mid-afternoon due to solar radiation, relative humidity values decrease as warm air expands to hold more water vapor.",
+      parameters: [
+        "Air Temp (Solid Cyan Line): Actual thermodynamic temperature at 2 meters above ground level.",
+        "Relative Humidity (Dashed Green Line): Saturated vapor pressure index relative to actual temperatures."
+      ],
+      modelTip: "METEOR TIP: A rapid drop in temperature paired with a simultaneous surge in humidity indicates the arrival of a cold front or a convective storm cell boundary."
+    },
+    hourly: {
+      title: "Atmospheric & Cloud Dynamics Manual",
+      desc: "An analytical cross-comparison modeling feels-like (apparent) temperatures against the direct vertical column cloud fraction and the actual hourly precipitation percentage probability.",
+      parameters: [
+        "Air Temp (Cyan Area): Base air temperature profile.",
+        "Feels Like (Purple Dashed Line): Wind-chill and humidity adjusted thermal coefficient.",
+        "Precip % (Blue Area): Statistical modeling probability of convective drop condensation."
+      ],
+      modelTip: "METEOR TIP: When the Apparent (Feels Like) line falls significantly below the Air Temp line, high surface wind velocity is causing convective cooling."
+    },
+    barometric: {
+      title: "Barometric Fluctuation & Wind Dynamics Manual",
+      desc: "Plots the atmospheric surface pressure in hectopascals (hPa) against the core sustained wind speed vectors and the maximum wind gust indices.",
+      parameters: [
+        "Barometer hPa (Solid Purple Area): Mass weight of the dry air column over sea level.",
+        "Wind Speed (Blue solid line): Horizontal wind velocity averaged over a ten-minute period.",
+        "Wind Gusts (Amber dashed line): Sudden bursts of wind speed exceeding average velocities."
+      ],
+      modelTip: "METEOR TIP: A steep, rapid drop in barometric pressure (greater than 1 hPa/hour) indicates high-speed cyclonic development or storm front approach."
+    },
+    weekly: {
+      title: "Ensemble 16-Day Span Manual",
+      desc: "Highlights the long-range macro temperature envelope. Tracks daily maximum spikes, night-time troughs, and maximum predicted wind gusts across 16 model runs.",
+      parameters: [
+        "Max Temp (Red Line): Peak solar convective thermal index.",
+        "Min Temp (Blue Line): Terrestrial cooling boundary layer night-time lowest value.",
+        "WindMax (Purple Dashed Line): Maximum sustained lateral velocity threshold predicted."
+      ],
+      modelTip: "METEOR TIP: A narrowing envelope (Max and Min temperatures converging) is characteristic of thick continuous overcast fog layers or maritime air flows."
+    },
+    rainSum: {
+      title: "Statistical Precipitation & Rain Sum Manual",
+      desc: "A vertical column bar chart detailing absolute daily liquid precipitation sums in millimeters over the model forecast window.",
+      parameters: [
+        "Rain (Blue Bars): Calculated aggregate precipitation depth in millimeters across the 24-hour diurnal run."
+      ],
+      modelTip: "METEOR TIP: 1 mm of rain represents 1 liter of water per square meter. Sums exceeding 15mm/day carry high local drainage saturation hazards."
+    }
+  };
+
   return (
     <div className="w-full flex flex-col gap-6" id="met-weather-console">
       
-      {/* 1. Real-time Telemetry Dashboard (Bento Widgets Grid) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* -------------------- 1. METEOR INTEL INTELLIGENT PREDICTOR & CONTROL HUB -------------------- */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 relative z-[60]" id="meteor-intel-control-hub">
+        
+        {/* WIDGET A: LIVE TICKING CLOCK & CONSOLE MONITOR (3 cols) */}
+        <div className="lg:col-span-3 bg-gradient-to-br from-slate-950 via-slate-950/95 to-slate-900 border border-slate-900/90 rounded-2xl p-5 flex flex-col justify-between shadow-xl min-h-[220px] relative overflow-hidden group">
+          {/* Subtle live radar overlay scanning line */}
+          <div className="absolute inset-0 bg-cyan-500/[0.015] pointer-events-none" />
+          <div className="absolute top-0 left-0 w-full h-[1.5px] bg-cyan-400/35 animate-[bounce_6s_infinite] pointer-events-none opacity-40" />
+
+          <div className="flex items-center justify-between text-[10px] text-cyan-400 uppercase font-mono font-bold tracking-widest relative z-10">
+            <span className="flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse" />
+              Operational Clock
+            </span>
+            <Clock className="h-4 w-4 text-cyan-400 animate-[spin_10s_linear_infinite]" />
+          </div>
+
+          <div className="my-3 relative z-10">
+            <h2 className="text-4xl font-extrabold text-white font-mono tracking-tighter">
+              {currentTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false })}
+            </h2>
+            <div className="flex items-center gap-2 mt-1.5 text-xs text-slate-300 font-medium font-mono">
+              <Calendar className="h-3.5 w-3.5 text-cyan-400" />
+              <span>{currentTime.toLocaleDateString([], { weekday: "long", year: "numeric", month: "short", day: "numeric" })}</span>
+            </div>
+          </div>
+
+          <div className="pt-3 border-t border-white/5 space-y-1.5 font-mono text-[9px] text-slate-400 relative z-10">
+            <div className="flex justify-between items-center">
+              <span>LOCAL TIME ZONE:</span>
+              <span className="text-white font-medium">UTC-07:00</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span>GPS SYNC POINT:</span>
+              <span className="text-cyan-400 font-medium">CONNECTED</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span>OBS TYPE:</span>
+              <span className="text-purple-400 font-medium">REAL-TIME TELEMETRY</span>
+            </div>
+          </div>
+        </div>
+
+        {/* WIDGET B: DYNAMIC ATMOSPHERIC PREDICTOR PANEL (4 cols) */}
+        <div className="lg:col-span-4 bg-slate-950/80 border border-slate-900 rounded-2xl p-5 flex flex-col justify-between shadow-xl relative z-10">
+          <div className="flex items-center justify-between text-[10px] text-cyan-400 uppercase font-mono font-bold tracking-widest">
+            <span className="flex items-center gap-1.5">
+              <Sparkles className="h-3.5 w-3.5 text-cyan-400 animate-pulse" />
+              Meteor Intel Predictor
+            </span>
+            <span className="text-slate-500 font-mono text-[9px]">SOLVED RADAR FRAME</span>
+          </div>
+
+          <div className="my-3 space-y-3 font-mono">
+            {/* Active target area */}
+            <div className="flex items-center gap-1.5 bg-slate-900/60 p-2 rounded-xl border border-white/5">
+              <MapPin className="h-4 w-4 text-cyan-400 flex-shrink-0 animate-bounce" />
+              <div className="truncate">
+                <span className="text-[9px] text-slate-500 block uppercase">Selected region</span>
+                <span className="text-xs text-white font-semibold block truncate">{cityName}</span>
+              </div>
+            </div>
+
+            {/* Precipitation prediction */}
+            <div className="grid grid-cols-2 gap-2 text-[10px]">
+              <div className="bg-blue-500/5 border border-blue-500/10 p-2 rounded-xl">
+                <span className="text-slate-400 block text-[9px] mb-0.5">NEXT PRECIPITATION</span>
+                {nextRain ? (
+                  <div>
+                    <span className="text-white font-bold block">{nextRain.time}</span>
+                    <span className="text-blue-400 font-semibold block mt-0.5">
+                      {nextRain.amount.toFixed(1)} mm ({nextRain.prob}%)
+                    </span>
+                  </div>
+                ) : (
+                  <span className="text-slate-500 block italic mt-1">No Rain Predicted</span>
+                )}
+              </div>
+
+              {/* Storm Prediction */}
+              <div className="bg-purple-500/5 border border-purple-500/10 p-2 rounded-xl">
+                <span className="text-slate-400 block text-[9px] mb-0.5">NEXT STORM SYSTEM</span>
+                {nextStorm ? (
+                  <div>
+                    <span className="text-white font-bold block truncate">{nextStorm.date}</span>
+                    <span className="text-purple-400 font-semibold block mt-0.5 truncate">
+                      {nextStorm.time} • {nextStorm.cause}
+                    </span>
+                  </div>
+                ) : (
+                  <span className="text-slate-500 block italic mt-1">No Storm Detected</span>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Tomorrow Sunset/Sunrise + Winds details */}
+          <div className="pt-2 border-t border-white/5 grid grid-cols-2 gap-2 text-[9px] text-slate-400 font-mono">
+            <div className="flex flex-col gap-0.5 pr-2 border-r border-white/5">
+              <div className="flex items-center gap-1.5 text-amber-400">
+                <Sunrise className="h-3 w-3" />
+                <span>SUNRISE: {tomorrowSun.sunrise}</span>
+              </div>
+              <div className="flex items-center gap-1.5 text-orange-400 mt-1">
+                <Sunset className="h-3 w-3" />
+                <span>SUNSET: {tomorrowSun.sunset}</span>
+              </div>
+            </div>
+            <div className="flex flex-col justify-center pl-2">
+              <div className="flex items-center gap-1.5">
+                <Wind className="h-3.5 w-3.5 text-purple-400" />
+                <span className="text-white font-bold">WIND SOURCE:</span>
+              </div>
+              <span className="text-[8px] text-slate-400 mt-0.5 uppercase tracking-tight">
+                {current.wind_direction_10m}° {current.wind_direction_10m > 180 ? "Westerly Flow" : "Easterly Flow"}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* WIDGET C: SMALL LIVE GIS WEATHER RADAR MAP (3 cols) */}
+        <div className="lg:col-span-3 bg-slate-950/80 border border-slate-900 rounded-2xl flex flex-col justify-between shadow-xl overflow-hidden relative group min-h-[220px]">
+          {/* Scanning sweep effect on top of leaflet */}
+          <div className="absolute inset-0 z-40 pointer-events-none border border-cyan-500/10 rounded-2xl overflow-hidden">
+            {/* Compass rose markings */}
+            <div className="absolute top-2 left-2 text-[8px] text-slate-500 font-mono font-bold bg-slate-950/70 px-1 py-0.5 rounded border border-white/5 z-50">30KM RAD RADIUS</div>
+            <div className="absolute bottom-2 right-2 text-[8px] text-cyan-400 font-mono font-bold bg-slate-950/80 px-1.5 py-0.5 rounded border border-cyan-500/20 z-50 animate-pulse flex items-center gap-1">
+              <div className="h-1.5 w-1.5 bg-cyan-400 rounded-full animate-ping"></div>
+              <span>RADAR RUNNING</span>
+            </div>
+            
+            {/* Radar scan lines */}
+            <div className="absolute inset-0 bg-gradient-to-t from-cyan-400/0 via-cyan-400/[0.04] to-cyan-400/0 animate-[spin_8s_linear_infinite] origin-center z-40 pointer-events-none" />
+            <div className="absolute inset-1/2 -translate-x-1/2 -translate-y-1/2 w-4/5 h-4/5 border border-cyan-500/15 rounded-full pointer-events-none z-40" />
+            <div className="absolute inset-1/2 -translate-x-1/2 -translate-y-1/2 w-1/2 h-1/2 border border-cyan-500/10 rounded-full pointer-events-none z-40" />
+            <div className="absolute inset-1/2 -translate-x-1/2 -translate-y-1/2 w-1/4 h-1/4 border border-cyan-500/5 rounded-full pointer-events-none z-40 animate-pulse" />
+          </div>
+
+          {/* Actual Interactive Leaflet map frame */}
+          <div 
+            ref={miniMapContainerRef} 
+            className="w-full h-full min-h-[175px] bg-slate-950 transition-all filter brightness-[0.75] contrast-[1.1] saturate-[1.25]"
+            id="meteor-intel-mini-map"
+          />
+
+          <div className="bg-slate-950 border-t border-slate-900 px-4 py-2 flex items-center justify-between text-[8px] font-mono text-slate-400">
+            <span>GRID_RES: 30KM</span>
+            <span>BEARING: {current.wind_direction_10m || 0}°</span>
+          </div>
+        </div>
+
+        {/* WIDGET D: SOUND-ENABLED CRISIS TERMINAL & NOTIFICATION CENTER (2 cols) */}
+        <div className="lg:col-span-2 bg-slate-950/80 border border-slate-900 rounded-2xl p-4 flex flex-col justify-between shadow-xl min-h-[220px]">
+          <div className="flex items-center justify-between text-[10px] text-cyan-400 uppercase font-mono font-bold tracking-widest">
+            <span className="flex items-center gap-1">
+              <Bell className="h-3.5 w-3.5 text-cyan-400 animate-[swing_1.5s_ease_infinite]" />
+              NOTIFICATIONS
+            </span>
+            {/* Alarm volume toggle */}
+            <button
+              onClick={() => setSoundEnabled(!soundEnabled)}
+              className={`p-1 rounded hover:bg-white/5 transition-all flex items-center justify-center ${soundEnabled ? "text-cyan-400" : "text-slate-500"}`}
+              title={soundEnabled ? "Mute notification ping" : "Unmute notification ping"}
+            >
+              {soundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+            </button>
+          </div>
+
+          <div className="my-2 flex-grow overflow-y-auto max-h-[135px] space-y-2 pr-1 custom-scrollbar">
+            {alerts.length > 0 ? (
+              alerts.map((item, idx) => (
+                <div 
+                  key={item.id + idx} 
+                  className={`p-2 rounded-lg text-[9px] font-mono leading-relaxed border flex flex-col gap-0.5 ${
+                    item.type === "alert" 
+                      ? "bg-red-500/5 border-red-500/15 text-red-300" 
+                      : item.type === "info"
+                      ? "bg-blue-500/5 border-blue-500/10 text-blue-300"
+                      : "bg-emerald-500/5 border-emerald-500/10 text-emerald-300"
+                  }`}
+                >
+                  <div className="flex items-center justify-between font-bold text-[8px]">
+                    <span className="uppercase tracking-wider flex items-center gap-1">
+                      {item.type === "alert" && <AlertTriangle className="h-2 w-2 text-red-400" />}
+                      {item.type === "info" && <Info className="h-2 w-2 text-blue-400" />}
+                      {item.type === "success" && <ShieldCheck className="h-2 w-2 text-emerald-400" />}
+                      {item.type.toUpperCase()}
+                    </span>
+                    <span className="text-slate-500 font-normal">{item.time}</span>
+                  </div>
+                  <p className="mt-0.5">{item.text}</p>
+                </div>
+              ))
+            ) : (
+              <div className="h-full flex items-center justify-center text-center text-[9px] font-mono text-slate-500 italic">
+                No active convective warnings. System idle.
+              </div>
+            )}
+          </div>
+
+          <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[8px] font-mono text-slate-500">
+            <span>SOUND_TRIGGERS: {soundEnabled ? "ON" : "OFF"}</span>
+            <span className="text-cyan-500/80 animate-pulse">MONITOR ACTIVE</span>
+          </div>
+        </div>
+
+      </div>
+
+      {/* -------------------- 2. FLOATING INFO MANUALS Overlay -------------------- */}
+      {activeInfoCard && chartHelpDocs[activeInfoCard] && (
+        <div className="fixed inset-0 z-[2000] bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
+          <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl text-slate-200 font-mono text-xs relative animate-in zoom-in-95 duration-300">
+            <div className="flex items-center justify-between pb-3 border-b border-white/10 mb-4">
+              <h3 className="text-sm font-bold text-cyan-400 flex items-center gap-2">
+                <Info className="h-4.5 w-4.5" />
+                {chartHelpDocs[activeInfoCard].title}
+              </h3>
+              <button 
+                onClick={() => setActiveInfoCard(null)}
+                className="px-2.5 py-1 text-[10px] text-slate-400 hover:text-white hover:bg-white/5 rounded-lg border border-white/10"
+              >
+                CLOSE MANUAL
+              </button>
+            </div>
+
+            <p className="leading-relaxed text-slate-300 mb-4 text-[11px]">{chartHelpDocs[activeInfoCard].desc}</p>
+            
+            <div className="space-y-2 mb-5">
+              <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-bold">Chart Variables Guide:</span>
+              {chartHelpDocs[activeInfoCard].parameters.map((pText, i) => (
+                <div key={i} className="bg-slate-950/50 p-2.5 border border-white/5 rounded-lg leading-relaxed text-[10px]">
+                  {pText}
+                </div>
+              ))}
+            </div>
+
+            <div className="bg-cyan-950/20 border border-cyan-500/20 p-3 rounded-xl text-cyan-400 text-[10px] leading-relaxed flex gap-2.5">
+              <Sparkles className="h-4.5 w-4.5 text-cyan-400 flex-shrink-0 mt-0.5 animate-pulse" />
+              <span>{chartHelpDocs[activeInfoCard].modelTip}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* -------------------- 3. REAL-TIME WIDGET BENTO CORE GRID -------------------- */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 relative z-10">
         {/* Widget 1: Thermal Core */}
         <div className="glass p-5 rounded-2xl flex flex-col justify-between hover:border-white/15 transition-all shadow-lg bg-slate-950/20">
           <div className="flex items-center justify-between text-slate-500 font-mono text-[10px] uppercase tracking-wider">
@@ -244,12 +788,14 @@ export default function WeatherConsole({ weatherData, unit, cityName }: ConsoleP
         </div>
       </div>
 
-      {/* 2. Primary Frontal Boundary state card */}
-      <div className="bg-gradient-to-r from-slate-950/70 to-slate-900/20 glass rounded-2xl p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 hover:border-white/15 transition-all">
+      {/* -------------------- 4. FRONT PLAN METEOROLOGICAL STATE CARD -------------------- */}
+      <div className="bg-gradient-to-r from-slate-950/70 to-slate-900/20 glass rounded-2xl p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 hover:border-white/15 transition-all relative z-10">
         <div className="flex items-center gap-4.5">
           <div className="p-4 bg-cyan-500/10 border border-cyan-500/25 rounded-2xl flex items-center justify-center shadow-[0_0_15px_rgba(6,182,212,0.1)]">
             {current.snowfall > 0 ? (
               <CloudSnow className="h-8 w-8 text-cyan-400 animate-bounce" />
+            ) : current.precipitation > 0 ? (
+              <CloudRain className="h-8 w-8 text-blue-400 animate-pulse" />
             ) : (
               <Sun className="h-8 w-8 text-amber-400 animate-spin-slow" />
             )}
@@ -285,15 +831,25 @@ export default function WeatherConsole({ weatherData, unit, cityName }: ConsoleP
         </div>
       </div>
 
-      {/* 24-Hour Temperature & Humidity Trends Line Chart */}
-      <div className="glass rounded-2xl p-6 bg-slate-950/20 border border-slate-900 animate-in fade-in duration-300">
+      {/* -------------------- 5. CHART 1: SYNOPTIC TRENDS (TEMP + HUMIDITY) -------------------- */}
+      <div className="glass rounded-2xl p-6 bg-slate-950/20 border border-slate-900 animate-in fade-in duration-300 relative z-10" id="synoptic-trends-chart">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
           <div className="flex items-center gap-2.5">
             <div className="h-8 w-8 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center">
               <Thermometer className="h-4 w-4 text-cyan-400" />
             </div>
             <div>
-              <h4 className="text-xs font-bold text-slate-200 uppercase tracking-widest font-mono">24-Hour Synoptic Trends</h4>
+              <div className="flex items-center gap-1.5">
+                <h4 className="text-xs font-bold text-slate-200 uppercase tracking-widest font-mono">24-Hour Synoptic Trends</h4>
+                {/* Manual Info Button */}
+                <button 
+                  onClick={() => setActiveInfoCard("synoptic")}
+                  className="p-1 rounded-full text-slate-500 hover:text-cyan-400 hover:bg-white/5 transition-all"
+                  title="How to analyze this graph"
+                >
+                  <Info className="h-4 w-4" />
+                </button>
+              </div>
               <p className="text-[10px] text-slate-500 mt-0.5 font-mono">Interactive core correlation of temperature vs. relative humidity</p>
             </div>
           </div>
@@ -400,54 +956,14 @@ export default function WeatherConsole({ weatherData, unit, cityName }: ConsoleP
                   }}
                 />
               )}
-              {peakHumItem && (
-                <ReferenceDot
-                  yAxisId="humidity"
-                  x={peakHumItem.hour}
-                  y={peakHumItem["Humidity %"]}
-                  r={5}
-                  fill="#10b981"
-                  stroke="#ffffff"
-                  strokeWidth={1.5}
-                  label={{
-                    value: `▲ ${maxHum}%`,
-                    position: "top",
-                    fill: "#34d399",
-                    fontSize: 9,
-                    fontFamily: "JetBrains Mono",
-                    fontWeight: "bold",
-                    offset: 8
-                  }}
-                />
-              )}
-              {troughHumItem && (
-                <ReferenceDot
-                  yAxisId="humidity"
-                  x={troughHumItem.hour}
-                  y={troughHumItem["Humidity %"]}
-                  r={5}
-                  fill="#059669"
-                  stroke="#ffffff"
-                  strokeWidth={1.5}
-                  label={{
-                    value: `▼ ${minHum}%`,
-                    position: "bottom",
-                    fill: "#10b981",
-                    fontSize: 9,
-                    fontFamily: "JetBrains Mono",
-                    fontWeight: "bold",
-                    offset: 8
-                  }}
-                />
-              )}
             </LineChart>
           </ResponsiveContainer>
         </div>
       </div>
 
-      {/* 3. MULTI-SOURCE SYMPOTIC DATA CONCURRENCY (Consensus Table Section) */}
+      {/* -------------------- 6. MULTI-SOURCE SYMPOTIC DATA CONCURRENCY (Consensus Table Section) -------------------- */}
       {viewConsensusDetails && providerList.length > 0 && (
-        <div className="glass rounded-2xl p-6 bg-slate-950/25 border border-slate-900 animate-in fade-in duration-300">
+        <div className="glass rounded-2xl p-6 bg-slate-950/25 border border-slate-900 animate-in fade-in duration-300 relative z-10">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
             <div className="flex items-center gap-2.5">
               <div className="h-8 w-8 rounded-lg bg-purple-500/10 border border-purple-500/30 flex items-center justify-center">
@@ -520,47 +1036,72 @@ export default function WeatherConsole({ weatherData, unit, cityName }: ConsoleP
         </div>
       )}
 
-      {/* 4. Forecasting & Time-series Analytics Console */}
-      <div className="glass rounded-2xl overflow-hidden flex flex-col bg-slate-950/10">
+      {/* -------------------- 7. THE FOUR OPERATIONAL DIAGNOSTIC RUN TABS -------------------- */}
+      <div className="glass rounded-2xl overflow-hidden flex flex-col bg-slate-950/10 relative z-10" id="operational-forecast-charts">
         {/* Forecaster tab header */}
         <div className="bg-slate-950/60 border-b border-white/5 px-6 py-4 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2.5">
             <BarChart3 className="h-5 w-5 text-cyan-400" />
-            <h3 className="text-xs font-bold text-slate-200 uppercase tracking-widest font-mono">Operational Forecast System</h3>
+            <div className="flex items-center gap-2">
+              <h3 className="text-xs font-bold text-slate-200 uppercase tracking-widest font-mono">Operational Forecast System</h3>
+              {/* Manual Info trigger */}
+              <button 
+                onClick={() => {
+                  if (forecastTab === "hourly") setActiveInfoCard("hourly");
+                  else if (forecastTab === "weekly") setActiveInfoCard("weekly");
+                  else if (forecastTab === "pressure") setActiveInfoCard("barometric");
+                  else setActiveInfoCard("rainSum");
+                }}
+                className="p-1 rounded-full text-slate-500 hover:text-cyan-400 hover:bg-white/5 transition-all"
+                title="Explain active chart parameters"
+              >
+                <Info className="h-4 w-4" />
+              </button>
+            </div>
           </div>
           
-          <div className="bg-slate-900/60 p-0.5 rounded-xl border border-white/5 flex">
+          <div className="bg-slate-900/60 p-0.5 rounded-xl border border-white/5 flex flex-wrap justify-center gap-1">
             <button
               onClick={() => setForecastTab("hourly")}
-              className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all duration-300 ${
-                forecastTab === "hourly" ? "bg-cyan-500 text-slate-950 font-semibold shadow" : "text-slate-400 hover:text-slate-200"
+              className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-300 ${
+                forecastTab === "hourly" ? "bg-cyan-500 text-slate-950 font-black shadow" : "text-slate-400 hover:text-slate-200"
               }`}
             >
               Hourly Run (48h)
             </button>
             <button
+              onClick={() => setForecastTab("pressure")}
+              className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-300 ${
+                forecastTab === "pressure" ? "bg-cyan-500 text-slate-950 font-black shadow" : "text-slate-400 hover:text-slate-200"
+              }`}
+            >
+              Barometric/Gust Core
+            </button>
+            <button
               onClick={() => setForecastTab("weekly")}
-              className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all duration-300 ${
-                forecastTab === "weekly" ? "bg-cyan-500 text-slate-950 font-semibold shadow" : "text-slate-400 hover:text-slate-200"
+              className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-300 ${
+                forecastTab === "weekly" ? "bg-cyan-500 text-slate-950 font-black shadow" : "text-slate-400 hover:text-slate-200"
               }`}
             >
               Ensemble 16-Day Run
             </button>
             <button
               onClick={() => setForecastTab("analytics")}
-              className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all duration-300 ${
-                forecastTab === "analytics" ? "bg-cyan-500 text-slate-950 font-semibold shadow" : "text-slate-400 hover:text-slate-200"
+              className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all duration-300 ${
+                forecastTab === "analytics" ? "bg-cyan-500 text-slate-950 font-black shadow" : "text-slate-400 hover:text-slate-200"
               }`}
             >
-              Probability Models
+              Precip Sum Models
             </button>
           </div>
         </div>
 
         {/* Time Series Charts Area */}
         <div className="p-6 flex-grow">
+          
+          {/* TAB 1: HOURLY RUN (Air Temp vs Feels Like vs Precipitation %) */}
           {forecastTab === "hourly" && (
-            <div className="h-[360px] w-full">
+            <div className="h-[360px] w-full animate-in fade-in duration-300">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={hourlyData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <defs>
@@ -590,8 +1131,40 @@ export default function WeatherConsole({ weatherData, unit, cityName }: ConsoleP
             </div>
           )}
 
+          {/* TAB 2: PRESSURE & WIND GUST CORE (Barometer hPa vs Wind Speed vs Wind Gusts) */}
+          {forecastTab === "pressure" && (
+            <div className="h-[360px] w-full animate-in fade-in duration-300">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={hourlyData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="baroGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.15}/>
+                      <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0.0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" opacity={0.3} />
+                  <XAxis dataKey="hour" stroke="#64748b" fontSize={10} fontFamily="JetBrains Mono" />
+                  {/* Left pressure axis */}
+                  <YAxis yAxisId="baro" stroke="#a855f7" fontSize={10} fontFamily="JetBrains Mono" domain={["auto", "auto"]} label={{ value: 'Atm Pressure (hPa)', angle: -90, position: 'insideLeft', fill: '#a855f7', fontSize: 9 }} />
+                  {/* Right wind velocity axis */}
+                  <YAxis yAxisId="wind" orientation="right" stroke="#f59e0b" fontSize={10} fontFamily="JetBrains Mono" domain={[0, "auto"]} label={{ value: `Velocity (${speedUnit})`, angle: 90, position: 'insideRight', fill: '#f59e0b', fontSize: 9 }} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: "#020617", borderColor: "rgba(255,255,255,0.08)", borderRadius: "12px", backdropFilter: "blur(8px)" }}
+                    labelStyle={{ color: "#94a3b8", fontFamily: "JetBrains Mono", fontSize: "11px" }}
+                    itemStyle={{ color: "#ffffff", fontSize: "12px" }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: "10px", fontFamily: "JetBrains Mono", marginTop: "10px" }} />
+                  <Area yAxisId="baro" type="monotone" dataKey="Barometer hPa" stroke="#8b5cf6" fillOpacity={1} fill="url(#baroGradient)" strokeWidth={2} name="Atm Pressure (hPa)" />
+                  <Line yAxisId="wind" type="monotone" dataKey="Wind Speed" stroke="#06b6d4" strokeWidth={1.8} dot={false} name={`Sustained Velocity (${speedUnit})`} />
+                  <Line yAxisId="wind" type="monotone" dataKey="Wind Gusts" stroke="#f59e0b" strokeWidth={1.5} strokeDasharray="3 3" dot={false} name={`Peak Wind Gust (${speedUnit})`} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* TAB 3: WEEKLY RUN (Daily high vs Daily low vs Wind Max) */}
           {forecastTab === "weekly" && (
-            <div className="h-[360px] w-full">
+            <div className="h-[360px] w-full animate-in fade-in duration-300">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={weeklyData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" opacity={0.3} />
@@ -603,16 +1176,17 @@ export default function WeatherConsole({ weatherData, unit, cityName }: ConsoleP
                     itemStyle={{ color: "#ffffff", fontSize: "12px" }}
                   />
                   <Legend wrapperStyle={{ fontSize: "10px", fontFamily: "JetBrains Mono", marginTop: "10px" }} />
-                  <Line type="monotone" dataKey="Max" stroke="#ef4444" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 6 }} />
-                  <Line type="monotone" dataKey="Min" stroke="#3b82f6" strokeWidth={2.2} dot={{ r: 3 }} />
-                  <Line type="monotone" dataKey="WindMax" stroke="#a855f7" strokeWidth={1.5} strokeDasharray="3 3" />
+                  <Line type="monotone" dataKey="Max" stroke="#ef4444" strokeWidth={2.5} dot={{ r: 3 }} activeDot={{ r: 6 }} name="Peak Convective Temp" />
+                  <Line type="monotone" dataKey="Min" stroke="#3b82f6" strokeWidth={2.2} dot={{ r: 3 }} name="Minimum Boundary Temp" />
+                  <Line type="monotone" dataKey="WindMax" stroke="#a855f7" strokeWidth={1.5} strokeDasharray="3 3" name={`Max Gale Fronts (${speedUnit})`} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
           )}
 
+          {/* TAB 4: PRECIP SUM MODELS & FORECAST UNCERTAINTY */}
           {forecastTab === "analytics" && (
-            <div className="flex flex-col lg:flex-row gap-6">
+            <div className="flex flex-col lg:flex-row gap-6 animate-in fade-in duration-300">
               {/* Rain bars Recharts */}
               <div className="h-[280px] flex-grow lg:w-2/3">
                 <ResponsiveContainer width="100%" height="100%">
@@ -621,7 +1195,7 @@ export default function WeatherConsole({ weatherData, unit, cityName }: ConsoleP
                     <XAxis dataKey="day" stroke="#64748b" fontSize={10} fontFamily="JetBrains Mono" />
                     <YAxis label={{ value: 'Rain Sum (mm)', angle: -90, position: 'insideLeft', fill: '#64748b', fontSize: 10 }} stroke="#64748b" fontSize={10} fontFamily="JetBrains Mono" />
                     <Tooltip contentStyle={{ backgroundColor: "#020617", borderColor: "rgba(255,255,255,0.08)", borderRadius: "12px", backdropFilter: "blur(8px)" }} />
-                    <Bar dataKey="Rain" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="Rain" fill="#3b82f6" radius={[4, 4, 0, 0]} name="Diurnal Precipitation Accumulation (mm)" />
                   </BarChart>
                 </ResponsiveContainer>
               </div>

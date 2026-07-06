@@ -96,8 +96,8 @@ export default function AuthorizationGateway({ onSuccess }: AuthorizationGateway
 
   const handleGuestUnlock = () => {
     setError("");
-    // Guest gets 2 minutes (120,000 milliseconds)
-    const expiryTime = Date.now() + 2 * 60 * 1000;
+    // Guest gets 5 minutes (300,000 milliseconds)
+    const expiryTime = Date.now() + 5 * 60 * 1000;
     onSuccess("guest", expiryTime, undefined, "Observer");
   };
 

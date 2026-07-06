@@ -305,12 +305,12 @@ export default function WeatherParticles({ weatherData }: WeatherParticlesProps)
   return (
     <div
       ref={containerRef}
-      className="absolute inset-0 pointer-events-none z-[50] overflow-hidden"
+      className="absolute inset-0 pointer-events-none z-[10] overflow-hidden"
       id="meteor-particle-canvas-container"
     >
       <canvas
         ref={canvasRef}
-        className="w-full h-full block opacity-30 mix-blend-screen transition-opacity duration-1000"
+        className="w-full h-full block opacity-60 mix-blend-screen transition-opacity duration-1000"
       />
     </div>
   );

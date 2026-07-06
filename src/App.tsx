@@ -502,6 +502,8 @@ export default function App() {
                       weatherData={weatherData} 
                       unit={currentUnit} 
                       cityName={cityName} 
+                      lat={lat}
+                      lon={lon}
                     />
                   )}
                   {activeTab === "gis" && (
