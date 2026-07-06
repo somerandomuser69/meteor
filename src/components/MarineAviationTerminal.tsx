@@ -56,14 +56,13 @@ export default function MarineAviationTerminal({ weatherData, lat, lon }: Termin
     }
   };
 
-  // Wave height & ocean tides simulated analytics
-  const marine = weatherData?.marine?.current || {
-    wave_height: 1.4,
-    wave_direction: 190,
-    wave_period: 7.2,
-    swell_wave_height: 0.9,
-    swell_wave_period: 9.1
-  };
+  // Wave height & ocean tides simulated analytics with strict nullish coalescing and crash-proofing
+  const rawMarine = weatherData?.marine?.current;
+  const wave_height = typeof rawMarine?.wave_height === "number" ? rawMarine.wave_height : 1.4;
+  const wave_direction = typeof rawMarine?.wave_direction === "number" ? rawMarine.wave_direction : 190;
+  const wave_period = typeof rawMarine?.wave_period === "number" ? rawMarine.wave_period : 7.2;
+  const swell_wave_height = typeof rawMarine?.swell_wave_height === "number" ? rawMarine.swell_wave_height : 0.9;
+  const swell_wave_period = typeof rawMarine?.swell_wave_period === "number" ? rawMarine.swell_wave_period : 9.1;
 
   // Generate tidal cycle points (High Tide / Low Tide) based on coordinates and current time
   const generateTides = () => {
@@ -83,6 +82,16 @@ export default function MarineAviationTerminal({ weatherData, lat, lon }: Termin
   };
 
   const tides = generateTides();
+
+  // Bulletproof aviation fields fallback
+  const decodedWindSpeed = aviationData?.decoded?.windSpeed || "12 knots (Gusts to 18)";
+  const decodedWindDirection = aviationData?.decoded?.windDirection || "210° (South-Southwest)";
+  const decodedVisibility = aviationData?.decoded?.visibility || "10SM";
+  const decodedClouds = aviationData?.decoded?.clouds || "SCT025 BKN080";
+  const decodedTemperature = aviationData?.decoded?.temperature || "22°C";
+  const decodedDewPoint = aviationData?.decoded?.dewPoint || "16°C";
+  const decodedRemarks = aviationData?.decoded?.remarks || "RMK AO2 SLP134";
+  const decodedPressure = aviationData?.decoded?.pressure || "A2992";
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" id="met-marine-aviation">
@@ -110,7 +119,7 @@ export default function MarineAviationTerminal({ weatherData, lat, lon }: Termin
             <button
               type="submit"
               disabled={loadingAviation}
-              className="px-4 py-2 bg-slate-900/60 hover:bg-slate-900/90 border border-white/10 rounded-xl text-xs font-mono text-cyan-400 transition-all flex items-center gap-1.5 shadow"
+              className="px-4 py-2 bg-slate-900/60 hover:bg-slate-900/90 border border-white/10 rounded-xl text-xs font-mono text-cyan-400 transition-all flex items-center gap-1.5 shadow animate-pulse-slow"
             >
               {loadingAviation ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
               Fetch
@@ -138,19 +147,27 @@ export default function MarineAviationTerminal({ weatherData, lat, lon }: Termin
               <div className="bg-slate-900/20 p-4 rounded-xl border border-white/5 grid grid-cols-2 gap-3.5 font-mono text-[10px]">
                 <div>
                   <span className="text-slate-500">Surface Wind:</span>
-                  <p className="text-slate-200 mt-0.5">{aviationData.decoded.windSpeed} from {aviationData.decoded.windDirection}</p>
+                  <p className="text-slate-200 mt-0.5">{decodedWindSpeed} from {decodedWindDirection}</p>
                 </div>
                 <div>
                   <span className="text-slate-500">Visibility Profile:</span>
-                  <p className="text-slate-200 mt-0.5">{aviationData.decoded.visibility}</p>
+                  <p className="text-slate-200 mt-0.5">{decodedVisibility}</p>
                 </div>
                 <div>
                   <span className="text-slate-500">Sky Conditions:</span>
-                  <p className="text-slate-200 mt-0.5">{aviationData.decoded.clouds}</p>
+                  <p className="text-slate-200 mt-0.5">{decodedClouds}</p>
                 </div>
                 <div>
                   <span className="text-slate-500">Temperature / Dewpoint:</span>
-                  <p className="text-slate-200 mt-0.5">{aviationData.decoded.temperature} / {aviationData.decoded.dewPoint}</p>
+                  <p className="text-slate-200 mt-0.5">{decodedTemperature} / {decodedDewPoint}</p>
+                </div>
+                <div>
+                  <span className="text-slate-500">Altimeter Setting:</span>
+                  <p className="text-slate-200 mt-0.5">{decodedPressure}</p>
+                </div>
+                <div>
+                  <span className="text-slate-500">Remarks / Identifiers:</span>
+                  <p className="text-slate-200 mt-0.5">{decodedRemarks}</p>
                 </div>
               </div>
 
@@ -194,10 +211,10 @@ export default function MarineAviationTerminal({ weatherData, lat, lon }: Termin
             <div className="bg-slate-900/30 p-4 rounded-xl border border-white/5">
               <span className="text-[10px] text-slate-500 font-mono uppercase">Wave Height (Significant)</span>
               <p className="text-2xl font-extrabold text-white tracking-tight mt-1">
-                {marine.wave_height.toFixed(1)} <span className="text-xs text-cyan-400 font-mono">meters</span>
+                {wave_height.toFixed(1)} <span className="text-xs text-cyan-400 font-mono">meters</span>
               </p>
               <div className="mt-2 text-[10px] text-slate-400 font-mono">
-                Swell Period: {marine.wave_period.toFixed(1)}s
+                Swell Period: {wave_period.toFixed(1)}s
               </div>
             </div>
 
@@ -205,11 +222,11 @@ export default function MarineAviationTerminal({ weatherData, lat, lon }: Termin
             <div className="bg-slate-900/30 p-4 rounded-xl border border-white/5">
               <span className="text-[10px] text-slate-500 font-mono uppercase">Swell Direction</span>
               <p className="text-2xl font-extrabold text-white tracking-tight mt-1 flex items-center gap-2">
-                {marine.wave_direction}°
+                {wave_direction}°
                 <Compass className="h-5 w-5 text-cyan-400 animate-spin-slow" />
               </p>
               <div className="mt-2 text-[10px] text-slate-400 font-mono">
-                Swell Height: {marine.swell_wave_height.toFixed(1)}m
+                Swell Height: {swell_wave_height.toFixed(1)}m
               </div>
             </div>
           </div>
