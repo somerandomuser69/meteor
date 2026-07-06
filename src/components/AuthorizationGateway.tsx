@@ -42,7 +42,7 @@ export default function AuthorizationGateway({ onSuccess }: AuthorizationGateway
         expiryTime = Date.now() + durationMins * 60 * 1000;
       }
 
-      onSuccess("key", expiryTime, undefined, "Observer");
+      onSuccess("key", expiryTime, data.key, "Observer");
     } catch (err: any) {
       setError(err.message || "Failed to validate Access Key.");
     } finally {

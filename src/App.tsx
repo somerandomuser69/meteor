@@ -93,6 +93,48 @@ export default function App() {
     return () => clearInterval(interval);
   }, [isAuthorized, authExpiry]);
 
+  // Periodically pulse the Access Key session to the server to decrement remaining seconds and verify validity
+  useEffect(() => {
+    if (!isAuthorized || authType !== "key" || !userToken) return;
+
+    const pulseInterval = setInterval(() => {
+      fetch("/api/auth/pulse-key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: userToken })
+      })
+        .then(res => {
+          if (!res.ok) {
+            return res.json().then(err => { throw err; });
+          }
+          return res.json();
+        })
+        .then(data => {
+          if (data.success) {
+            if (data.remainingSeconds !== undefined && data.remainingSeconds >= 0) {
+              const newExpiry = Date.now() + data.remainingSeconds * 1000;
+              setAuthExpiry(newExpiry);
+              localStorage.setItem("met_auth_expiry", newExpiry.toString());
+            }
+          }
+        })
+        .catch((err) => {
+          console.error("Pulse validation error:", err);
+          setUserToken(null);
+          localStorage.removeItem("met_intel_token");
+          localStorage.removeItem("met_auth_type");
+          localStorage.removeItem("met_auth_expiry");
+          setIsAuthorized(false);
+          setAuthType(null);
+          setAuthExpiry(null);
+          setCurrentRole("Observer");
+          alert(err.error || "Your Access Key session has ended.");
+        });
+    }, 5000); // Pulse every 5 seconds for precise active-time tracking
+
+    return () => clearInterval(pulseInterval);
+  }, [isAuthorized, authType, userToken]);
+
   const handleAuthSuccess = (type: "admin" | "user" | "guest" | "key", expiry: number, token?: string, role?: string) => {
     localStorage.setItem("met_auth_type", type);
     localStorage.setItem("met_auth_expiry", expiry.toString());
@@ -521,7 +563,18 @@ export default function App() {
                         }
                         fetchFavorites();
                       }}
-                      onLogout={() => {
+                      onLogout={async () => {
+                        if (authType === "key" && userToken) {
+                          try {
+                            await fetch("/api/auth/logout-key", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ key: userToken })
+                            });
+                          } catch (e) {
+                            console.error("Error pausing key session on logout:", e);
+                          }
+                        }
                         setUserToken(null);
                         localStorage.removeItem("met_intel_token");
                         localStorage.removeItem("met_auth_type");

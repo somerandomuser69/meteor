@@ -107,11 +107,44 @@
   ],
   "keys": [
     {
+      "id": "GUEST-TEMP-5MIN",
+      "durationMinutes": 5,
+      "validUntil": "",
+      "createdAt": "2026-07-06T18:55:00.000Z",
+      "notes": "Temporary 5-minute guest operational trial",
+      "isSessionActive": false,
+      "remainingSeconds": 300,
+      "sessionStartedAt": ""
+    },
+    {
+      "id": "GUEST-TEMP-15MIN",
+      "durationMinutes": 15,
+      "validUntil": "",
+      "createdAt": "2026-07-06T18:55:00.000Z",
+      "notes": "Standard 15-minute operational pass for external meteorologist guests",
+      "isSessionActive": false,
+      "remainingSeconds": 900,
+      "sessionStartedAt": ""
+    },
+    {
+      "id": "GUEST-TEMP-30MIN",
+      "durationMinutes": 30,
+      "validUntil": "",
+      "createdAt": "2026-07-06T18:55:00.000Z",
+      "notes": "Full 30-minute operational evaluation pass",
+      "isSessionActive": false,
+      "remainingSeconds": 1800,
+      "sessionStartedAt": ""
+    },
+    {
       "id": "SRIYU-2026-1HR",
       "durationMinutes": 60,
       "validUntil": "",
       "createdAt": "2026-07-06T18:41:55.430Z",
-      "notes": "Admin-generated access pass"
+      "notes": "Premium 1-hour station observatory access token",
+      "isSessionActive": false,
+      "remainingSeconds": 3600,
+      "sessionStartedAt": ""
     }
   ]
 }

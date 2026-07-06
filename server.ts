@@ -51,6 +51,9 @@ interface AccessKey {
   validUntil: string; // ISO date string after which key can't be used, or "" for infinite
   createdAt: string;
   notes: string;
+  isSessionActive?: boolean;
+  remainingSeconds?: number;
+  sessionStartedAt?: string;
 }
 
 interface DBStructure {
@@ -133,9 +136,50 @@ function initializeDatabase(): DBStructure {
     }
   }
 
-  // Ensure keys array exists
-  if (!rawData.keys) {
-    rawData.keys = [];
+  // Ensure keys array exists and has seeded keys
+  if (!rawData.keys || rawData.keys.length === 0) {
+    rawData.keys = [
+      {
+        id: "GUEST-TEMP-5MIN",
+        durationMinutes: 5,
+        validUntil: "",
+        createdAt: new Date().toISOString(),
+        notes: "Temporary 5-minute guest operational trial",
+        isSessionActive: false,
+        remainingSeconds: 300,
+        sessionStartedAt: ""
+      },
+      {
+        id: "GUEST-TEMP-15MIN",
+        durationMinutes: 15,
+        validUntil: "",
+        createdAt: new Date().toISOString(),
+        notes: "Standard 15-minute operational pass for external meteorologist guests",
+        isSessionActive: false,
+        remainingSeconds: 900,
+        sessionStartedAt: ""
+      },
+      {
+        id: "GUEST-TEMP-30MIN",
+        durationMinutes: 30,
+        validUntil: "",
+        createdAt: new Date().toISOString(),
+        notes: "Full 30-minute operational evaluation pass",
+        isSessionActive: false,
+        remainingSeconds: 1800,
+        sessionStartedAt: ""
+      },
+      {
+        id: "SRIYU-2026-1HR",
+        durationMinutes: 60,
+        validUntil: "",
+        createdAt: new Date().toISOString(),
+        notes: "Premium 1-hour station observatory access token",
+        isSessionActive: false,
+        remainingSeconds: 3600,
+        sessionStartedAt: ""
+      }
+    ];
   }
 
   // Ensure meet.arnesh@gmail.com is seeded as Admin
@@ -530,7 +574,7 @@ function generateAccessKeyString(): string {
 // ACCESS KEY MANAGEMENT & VALIDATION ENDPOINTS
 // ----------------------------------------------------
 
-// Validate access key
+// Validate access key and start active session
 app.post("/api/auth/validate-key", (req, res) => {
   const { key } = req.body;
   if (!key) {
@@ -552,12 +596,105 @@ app.post("/api/auth/validate-key", (req, res) => {
     }
   }
 
+  // Check remaining seconds (if initialized and expired)
+  if (matchedKey.remainingSeconds !== undefined && matchedKey.remainingSeconds === 0) {
+    return res.status(400).json({ error: "This Access Key session time has fully run out." });
+  }
+
+  // Initialize remaining seconds if not done
+  if (matchedKey.remainingSeconds === undefined) {
+    matchedKey.remainingSeconds = matchedKey.durationMinutes > 0 ? matchedKey.durationMinutes * 60 : -1;
+  }
+
+  // Start the session timer only on login!
+  matchedKey.isSessionActive = true;
+  matchedKey.sessionStartedAt = new Date().toISOString();
+  saveToDatabase();
+
   res.json({
     success: true,
     key: matchedKey.id,
     durationMinutes: matchedKey.durationMinutes,
+    remainingSeconds: matchedKey.remainingSeconds,
+    isSessionActive: true,
     validUntil: matchedKey.validUntil || "infinite",
     notes: matchedKey.notes
+  });
+});
+
+// Pause the access key timer on explicit logout
+app.post("/api/auth/logout-key", (req, res) => {
+  const { key } = req.body;
+  if (!key) {
+    return res.status(400).json({ error: "Access Key code is required." });
+  }
+
+  const cleanKey = key.trim().toUpperCase();
+  const matchedKey = db.keys.find(k => k.id === cleanKey);
+
+  if (matchedKey && matchedKey.isSessionActive) {
+    const now = Date.now();
+    const startedAt = matchedKey.sessionStartedAt ? new Date(matchedKey.sessionStartedAt).getTime() : now;
+    const elapsedSeconds = Math.max(0, Math.floor((now - startedAt) / 1000));
+
+    if (matchedKey.remainingSeconds !== undefined && matchedKey.remainingSeconds > 0) {
+      matchedKey.remainingSeconds = Math.max(0, matchedKey.remainingSeconds - elapsedSeconds);
+    }
+    matchedKey.isSessionActive = false;
+    matchedKey.sessionStartedAt = "";
+    saveToDatabase();
+  }
+
+  res.json({ success: true });
+});
+
+// Pulse access key activity and dynamically update remaining time on server
+app.post("/api/auth/pulse-key", (req, res) => {
+  const { key } = req.body;
+  if (!key) {
+    return res.status(400).json({ error: "Access Key code is required." });
+  }
+
+  const cleanKey = key.trim().toUpperCase();
+  const matchedKey = db.keys.find(k => k.id === cleanKey);
+
+  if (!matchedKey) {
+    return res.status(404).json({ error: "Access Key not found." });
+  }
+
+  if (matchedKey.isSessionActive) {
+    const now = Date.now();
+    const startedAt = matchedKey.sessionStartedAt ? new Date(matchedKey.sessionStartedAt).getTime() : now;
+    const elapsedSeconds = Math.max(0, Math.floor((now - startedAt) / 1000));
+
+    if (matchedKey.remainingSeconds !== undefined && matchedKey.remainingSeconds > 0) {
+      matchedKey.remainingSeconds = Math.max(0, matchedKey.remainingSeconds - elapsedSeconds);
+      if (matchedKey.remainingSeconds <= 0) {
+        matchedKey.remainingSeconds = 0;
+        matchedKey.isSessionActive = false;
+        matchedKey.sessionStartedAt = "";
+        saveToDatabase();
+        return res.status(400).json({ error: "Your access key session has expired.", expired: true });
+      }
+    }
+    // Update baseline to current pulse time
+    matchedKey.sessionStartedAt = new Date().toISOString();
+    saveToDatabase();
+  } else {
+    // If we receive a pulse but session wasn't active, activate it
+    matchedKey.isSessionActive = true;
+    matchedKey.sessionStartedAt = new Date().toISOString();
+    if (matchedKey.remainingSeconds === undefined) {
+      matchedKey.remainingSeconds = matchedKey.durationMinutes > 0 ? matchedKey.durationMinutes * 60 : -1;
+    }
+    saveToDatabase();
+  }
+
+  res.json({
+    success: true,
+    key: matchedKey.id,
+    remainingSeconds: matchedKey.remainingSeconds !== undefined ? matchedKey.remainingSeconds : -1,
+    isSessionActive: matchedKey.isSessionActive
   });
 });
 
@@ -594,7 +731,10 @@ app.post("/api/admin/keys", (req, res) => {
     durationMinutes: dur,
     validUntil: validUntil || "", // empty means infinite
     createdAt: new Date().toISOString(),
-    notes: notes || "Admin-generated access pass"
+    notes: notes || "Admin-generated access pass",
+    isSessionActive: false,
+    remainingSeconds: dur > 0 ? dur * 60 : -1,
+    sessionStartedAt: ""
   };
 
   db.keys.push(newKey);
