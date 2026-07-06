@@ -1,0 +1,6 @@
+{
+  "name": "METEOR Intel",
+  "description": "An enterprise-grade Meteorological Weather Intelligence Platform featuring real-time telemetry, interactive GIS overlays, marine/aviation weather, climate change analytics, and server-side AI-generated weather briefings.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
