@@ -27,38 +27,39 @@ export default function App() {
   const [savedLocations, setSavedLocations] = useState<SavedLocation[]>([]);
   const [currentRole, setCurrentRole] = useState<UserRole>("Observer");
   const [currentUnit, setCurrentUnit] = useState<UnitType>("metric");
-  // Authorization gateway states
-  const [isAuthorized, setIsAuthorized] = useState<boolean>(() => {
+  // Authorization gateway states with robust initial resolution
+  const [initialAuth] = useState(() => {
     const savedType = localStorage.getItem("met_auth_type");
     const savedExpiryStr = localStorage.getItem("met_auth_expiry");
     const savedToken = localStorage.getItem("met_intel_token");
-    if (!savedType) return false;
     
-    // Admin or user roles MUST have an accompanying token
-    if (savedType === "admin" || savedType === "user") {
-      return !!savedToken;
+    if (!savedType) {
+      return { authorized: false, type: null, expiry: null, token: null };
     }
     
-    // Check key or guest expiry
-    if (savedExpiryStr) {
+    if (savedType === "admin" || savedType === "user") {
+      if (savedToken) {
+        return { authorized: true, type: savedType as any, expiry: null, token: savedToken };
+      }
+    } else if (savedExpiryStr) {
       const expiry = parseFloat(savedExpiryStr);
       if (expiry > Date.now()) {
-        return true;
+        return { authorized: true, type: savedType as any, expiry: expiry, token: savedToken };
       }
     }
-    return false;
+    
+    // Clean expired storage
+    localStorage.removeItem("met_auth_type");
+    localStorage.removeItem("met_auth_expiry");
+    localStorage.removeItem("met_intel_token");
+    return { authorized: false, type: null, expiry: null, token: null };
   });
 
-  const [authType, setAuthType] = useState<"admin" | "user" | "guest" | "key" | null>(() => {
-    return localStorage.getItem("met_auth_type") as any;
-  });
-
-  const [authExpiry, setAuthExpiry] = useState<number | null>(() => {
-    const str = localStorage.getItem("met_auth_expiry");
-    return str ? parseFloat(str) : null;
-  });
-
+  const [isAuthorized, setIsAuthorized] = useState<boolean>(initialAuth.authorized);
+  const [authType, setAuthType] = useState<"admin" | "user" | "guest" | "key" | null>(initialAuth.type);
+  const [authExpiry, setAuthExpiry] = useState<number | null>(initialAuth.expiry);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [lastSynced, setLastSynced] = useState<Date>(() => new Date());
 
   // Active navigation tab
   const [activeTab, setActiveTab] = useState<"weather" | "gis" | "marine" | "geohazards" | "climate" | "alerts" | "config" | "keys">("weather");
@@ -66,7 +67,7 @@ export default function App() {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   // Authentication states
-  const [userToken, setUserToken] = useState<string | null>(localStorage.getItem("met_intel_token"));
+  const [userToken, setUserToken] = useState<string | null>(initialAuth.token);
 
   // Running the ticking countdown interval for guest / key limited sessions
   useEffect(() => {
@@ -147,6 +148,9 @@ export default function App() {
     if (token) {
       localStorage.setItem("met_intel_token", token);
       setUserToken(token);
+    } else {
+      localStorage.removeItem("met_intel_token");
+      setUserToken(null);
     }
 
     if (role) {
@@ -168,12 +172,46 @@ export default function App() {
       if (!res.ok) throw new Error("Telemetry hub down.");
       const data: WeatherData = await res.json();
       setWeatherData(data);
+      setLastSynced(new Date());
     } catch (error) {
       console.error("Telemetry fetch failure:", error);
     } finally {
       setLoading(false);
     }
   };
+
+  // Synchronize telemetry in background without interrupting user
+  const syncTelemetryBackground = async (targetLat: number, targetLon: number) => {
+    try {
+      const res = await fetch(`/api/weather?lat=${targetLat}&lon=${targetLon}`);
+      if (res.ok) {
+        const data: WeatherData = await res.json();
+        setWeatherData(data);
+        setLastSynced(new Date());
+      }
+    } catch (error) {
+      console.error("Background telemetry sync failed:", error);
+    }
+  };
+
+  // Manual trigger to fetch and sync telemetry
+  const handleManualRefresh = () => {
+    fetchTelemetry(lat, lon);
+    fetchFavorites();
+  };
+
+  // Automatically sync telemetry and notifications every 10 minutes (600,000 ms)
+  useEffect(() => {
+    if (!isAuthorized) return;
+
+    const autoSyncInterval = setInterval(() => {
+      console.log("Triggering 10-minute automated telemetry sync...");
+      syncTelemetryBackground(lat, lon);
+      fetchFavorites();
+    }, 10 * 60 * 1000);
+
+    return () => clearInterval(autoSyncInterval);
+  }, [lat, lon, isAuthorized]);
 
   // Sync Saved Locations
   const fetchFavorites = async () => {
@@ -194,7 +232,7 @@ export default function App() {
 
   // Check and sync user session on start
   useEffect(() => {
-    if (userToken) {
+    if (isAuthorized && userToken) {
       fetch("/api/auth/me", {
         headers: { "Authorization": `Bearer ${userToken}` }
       })
@@ -221,7 +259,7 @@ export default function App() {
         })
         .catch(() => {});
     }
-  }, [userToken]);
+  }, [isAuthorized, userToken]);
 
   useEffect(() => {
     fetchTelemetry(lat, lon);
@@ -515,6 +553,8 @@ export default function App() {
                       cityName={cityName} 
                       lat={lat}
                       lon={lon}
+                      onRefresh={handleManualRefresh}
+                      lastSyncedAt={lastSynced}
                     />
                   )}
                   {activeTab === "gis" && (

@@ -5,7 +5,7 @@ import {
   Download, Sparkles, ChevronRight, BarChart3, CloudSnow, Database, 
   Network, ShieldCheck, Cpu, Clock, Calendar, Info, Bell, Volume2, 
   VolumeX, ShieldAlert, Zap, CloudLightning, Sunrise, Sunset, MapPin, 
-  HelpCircle, AlertTriangle 
+  HelpCircle, AlertTriangle, RefreshCw
 } from "lucide-react";
 import { UnitType } from "../types";
 
@@ -15,9 +15,19 @@ interface ConsoleProps {
   cityName: string;
   lat?: number;
   lon?: number;
+  onRefresh?: () => void;
+  lastSyncedAt?: Date;
 }
 
-export default function WeatherConsole({ weatherData, unit, cityName, lat = 20.4625, lon = 85.8792 }: ConsoleProps) {
+export default function WeatherConsole({ 
+  weatherData, 
+  unit, 
+  cityName, 
+  lat = 20.4625, 
+  lon = 85.8792,
+  onRefresh,
+  lastSyncedAt
+}: ConsoleProps) {
   const [forecastTab, setForecastTab] = useState<"hourly" | "weekly" | "analytics" | "pressure">("hourly");
   const [viewConsensusDetails, setViewConsensusDetails] = useState<boolean>(true);
   
@@ -199,7 +209,7 @@ export default function WeatherConsole({ weatherData, unit, cityName, lat = 20.4
   useEffect(() => {
     const freshAlerts: Array<{ id: string; time: string; text: string; type: "alert" | "info" | "success" }> = [];
     
-    // Core check 1: Storm expectation
+    // 1. Core check: Storm expectation
     if (nextStorm) {
       const hrsDiff = Math.ceil((nextStorm.fullDate.getTime() - Date.now()) / (1000 * 60 * 60));
       if (hrsDiff < 48) {
@@ -212,7 +222,7 @@ export default function WeatherConsole({ weatherData, unit, cityName, lat = 20.4
       }
     }
     
-    // Core check 2: Rain expectation
+    // 2. Core check: Rain expectation
     if (nextRain) {
       const hrsDiff = Math.ceil((nextRain.fullDate.getTime() - Date.now()) / (1000 * 60 * 60));
       if (hrsDiff < 24) {
@@ -225,7 +235,59 @@ export default function WeatherConsole({ weatherData, unit, cityName, lat = 20.4
       }
     }
 
-    // Default systemic alerts to maintain operational dashboard look
+    // 3. WMO Weather Condition Decode Notification
+    freshAlerts.push({
+      id: "sys-weather",
+      time: "REAL-TIME",
+      text: `MET DECODE: Current weather state is verified as '${weatherMeta.text}' (${weatherMeta.desc}).`,
+      type: "info"
+    });
+
+    // 4. Time Synchronization Notification
+    const formattedTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    freshAlerts.push({
+      id: "sys-time",
+      time: "REAL-TIME",
+      text: `TEMPORAL NODE: Observatory clock synced at ${formattedTime}. Astronomical reference established.`,
+      type: "success"
+    });
+
+    // 5. Localized Temperature Monitoring
+    const currentTemp = convertTemp(current.temperature_2m);
+    const tempStatus = current.temperature_2m > 35 || current.temperature_2m < 5 ? "extreme" : "nominal";
+    freshAlerts.push({
+      id: "sys-temp",
+      time: "REAL-TIME",
+      text: `THERMAL SENSOR: Local ambient thermal grid registers at ${currentTemp}${tempUnit} (${tempStatus} range).`,
+      type: tempStatus === "extreme" ? "alert" : "success"
+    });
+
+    // 6. Precipitation Scan Notification
+    if (current.precipitation > 0) {
+      freshAlerts.push({
+        id: "sys-precip",
+        time: "IMMEDIATE",
+        text: `PRECIP SENSOR: Active rain/shower sensors reporting ${current.precipitation} mm of hourly precipitation volume.`,
+        type: "alert"
+      });
+    } else {
+      freshAlerts.push({
+        id: "sys-precip",
+        time: "REAL-TIME",
+        text: `PRECIP SENSOR: Passive dry status. No trace precipitation registered over past 60 minutes.`,
+        type: "success"
+      });
+    }
+
+    // 7. Cloud Cover Density Notification
+    freshAlerts.push({
+      id: "sys-clouds",
+      time: "REAL-TIME",
+      text: `NEPHOLOGY SCAN: Cloud opacity covers ${current.cloud_cover}% of the local station dome area.`,
+      type: "info"
+    });
+
+    // 8. Default GIS Radar notification
     freshAlerts.push({
       id: "sys-0",
       time: "REAL-TIME",
@@ -233,6 +295,7 @@ export default function WeatherConsole({ weatherData, unit, cityName, lat = 20.4
       type: "success"
     });
 
+    // 9. High Wind Shear warning
     if (current.wind_speed_10m > 25) {
       freshAlerts.push({
         id: "sys-wind",
@@ -240,11 +303,18 @@ export default function WeatherConsole({ weatherData, unit, cityName, lat = 20.4
         text: `WIND SHEAR: Sustained velocities of ${convertWind(current.wind_speed_10m)} ${speedUnit} verified by ensemble solvers.`,
         type: "alert"
       });
+    } else {
+      freshAlerts.push({
+        id: "sys-wind-nom",
+        time: "REAL-TIME",
+        text: `WIND MONITOR: Surface friction winds nominal at ${convertWind(current.wind_speed_10m)} ${speedUnit}.`,
+        type: "success"
+      });
     }
 
     setAlerts(freshAlerts);
     playNotificationSound();
-  }, [nextRain, nextStorm, cityName, lat, lon]);
+  }, [nextRain, nextStorm, cityName, lat, lon, current]);
 
   // Recharts: Preparing Hourly Data Frame
   const hourlyData = hourly.time.slice(0, 24).map((t: string, idx: number) => {
@@ -738,14 +808,25 @@ export default function WeatherConsole({ weatherData, unit, cityName, lat = 20.4
               <Bell className="h-3.5 w-3.5 text-cyan-400 animate-[swing_1.5s_ease_infinite]" />
               NOTIFICATIONS
             </span>
-            {/* Alarm volume toggle */}
-            <button
-              onClick={() => setSoundEnabled(!soundEnabled)}
-              className={`p-1 rounded hover:bg-white/5 transition-all flex items-center justify-center ${soundEnabled ? "text-cyan-400" : "text-slate-500"}`}
-              title={soundEnabled ? "Mute notification ping" : "Unmute notification ping"}
-            >
-              {soundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
-            </button>
+            <div className="flex items-center gap-2">
+              {onRefresh && (
+                <button
+                  onClick={onRefresh}
+                  className="p-1 rounded hover:bg-white/5 text-slate-400 hover:text-cyan-400 transition-all flex items-center justify-center"
+                  title="Manual telemetry sync"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                </button>
+              )}
+              {/* Alarm volume toggle */}
+              <button
+                onClick={() => setSoundEnabled(!soundEnabled)}
+                className={`p-1 rounded hover:bg-white/5 transition-all flex items-center justify-center ${soundEnabled ? "text-cyan-400" : "text-slate-500"}`}
+                title={soundEnabled ? "Mute notification ping" : "Unmute notification ping"}
+              >
+                {soundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
+              </button>
+            </div>
           </div>
 
           <div className="my-2 flex-grow overflow-y-auto max-h-[135px] space-y-2 pr-1 custom-scrollbar">
@@ -782,7 +863,9 @@ export default function WeatherConsole({ weatherData, unit, cityName, lat = 20.4
 
           <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[8px] font-mono text-slate-500">
             <span>SOUND_TRIGGERS: {soundEnabled ? "ON" : "OFF"}</span>
-            <span className="text-cyan-500/80 animate-pulse">MONITOR ACTIVE</span>
+            <span className="text-cyan-500/85">
+              LAST SYNCED: {lastSyncedAt ? lastSyncedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : "PENDING"}
+            </span>
           </div>
         </div>
 
